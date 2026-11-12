@@ -55,3 +55,29 @@ Passwords are stored as BCrypt hashes. Secrets come from environment variables a
 - Dashboard category split and stock-movement chart use sample data
 - Tokens expire after 60 minutes with no refresh
 - No separate Customer table (customer details are saved on each order)
+
+
+
+## Application Screenshots
+
+### Dashboard
+![Dashboard](Docs/ScreenShots/Dashboard.png)
+
+### Products
+![Products](Docs/ScreenShots/Products.png)
+
+### Inventory
+![Inventory](Docs/ScreenShots/Inventory.png)
+
+### Categories
+![Categories](Docs/ScreenShots/Categories.png)
+
+### Orders
+![Orders](Docs/ScreenShots/Orders.png)
+
+### Users
+![Users](Docs/ScreenShots/Users.png)
+
+### Alerts
+![Alerts](Docs/ScreenShots/Alerts.png)
+
