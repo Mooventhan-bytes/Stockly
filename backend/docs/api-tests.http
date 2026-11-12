@@ -1,0 +1,182 @@
+### Stockly API test script (IntelliJ HTTP Client). Save in backend/docs/ and open in IntelliJ.
+### Run the requests TOP TO BOTTOM, using the green arrow beside each "###" line. Expected result is written above each request.
+### Assumes a FRESH database (no sample data), so the first category, product and order get id 1.
+### Replace admin@example.com / YOUR_PASSWORD with your ADMIN_EMAIL / ADMIN_PASSWORD.
+
+@base = http://localhost:8080
+
+### 1. Wrong password -> 401 "Incorrect email or password."
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "admin@example.com", "password": "wrong-password"}
+
+### 2. Login -> 200, returns a token (saved automatically as {{token}})
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "admin@example.com", "password": "YOUR_PASSWORD"}
+
+> {% client.global.set("token", response.body.token); %}
+
+### 3. No token -> 401 "Please sign in."
+GET {{base}}/api/products
+
+### 4. Create category -> 201, id 1
+POST {{base}}/api/categories
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "Electronics", "description": "Gadgets"}
+
+### 5. Duplicate category (different capitals) -> 409
+POST {{base}}/api/categories
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "electronics"}
+
+### 6. Create product with plenty of stock -> 201, id 1, status IN
+POST {{base}}/api/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "Keyboard", "sku": "kb-1", "categoryId": 1, "price": 1500, "stockQuantity": 10, "reorderThreshold": 5}
+
+### 7. Create product that starts LOW -> 201, id 2, status LOW (an alert is created)
+POST {{base}}/api/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "Mouse", "sku": "MS-1", "categoryId": 1, "price": 600, "stockQuantity": 3, "reorderThreshold": 5}
+
+### 8. Duplicate SKU (any letter case) -> 409 "This SKU is already used by another product."
+POST {{base}}/api/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "Other", "sku": "KB-1", "categoryId": 1, "price": 100, "stockQuantity": 1, "reorderThreshold": 1}
+
+### 9. Invalid data -> 400 with fieldErrors (name, price)
+POST {{base}}/api/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "", "sku": "X-1", "categoryId": 1, "price": 0, "stockQuantity": 1, "reorderThreshold": 1}
+
+### 10. Filter low stock -> only "Mouse"
+GET {{base}}/api/products?status=LOW
+Authorization: Bearer {{token}}
+
+### 11. Active alerts -> exactly 1 (Mouse, LOW)
+GET {{base}}/api/alerts?active=true
+Authorization: Bearer {{token}}
+
+### 12. Add 20 to Mouse -> 201, stock 3 -> 23
+POST {{base}}/api/inventory/products/2/adjust
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"type": "IN", "quantity": 20, "reason": "Restock received"}
+
+### 13. Alert is now resolved: active list empty, resolved list has 1
+GET {{base}}/api/alerts?active=false
+Authorization: Bearer {{token}}
+
+### 14. Remove more than exists -> 409, stock unchanged
+POST {{base}}/api/inventory/products/1/adjust
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"type": "OUT", "quantity": 50, "reason": "Lost"}
+
+### 15. Create order (Idempotency-Key sent) -> 201, total 3000.00, Keyboard stock 10 -> 8
+POST {{base}}/api/orders
+Authorization: Bearer {{token}}
+Idempotency-Key: test-key-1
+Content-Type: application/json
+
+{"customerName": "Test Customer", "items": [{"productId": 1, "quantity": 2}]}
+
+### 16. Send the SAME request again -> same order returned, NOT a second order (stock stays 8)
+POST {{base}}/api/orders
+Authorization: Bearer {{token}}
+Idempotency-Key: test-key-1
+Content-Type: application/json
+
+{"customerName": "Test Customer", "items": [{"productId": 1, "quantity": 2}]}
+
+### 17. Too many items -> 409 "Not enough stock: Keyboard (only 8 left)."
+POST {{base}}/api/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"customerName": "Test Customer", "items": [{"productId": 1, "quantity": 1000}]}
+
+### 18. Only one order exists so far
+GET {{base}}/api/orders
+Authorization: Bearer {{token}}
+
+### 19. Skip a step (PENDING -> DELIVERED) -> 409
+PUT {{base}}/api/orders/1/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status": "DELIVERED"}
+
+### 20. Confirm -> 200
+PUT {{base}}/api/orders/1/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status": "CONFIRMED"}
+
+### 21. Cancel -> 200, stock returned (Keyboard back to 10)
+PUT {{base}}/api/orders/1/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status": "CANCELLED"}
+
+### 22. Keyboard stock is 10 again
+GET {{base}}/api/products/1
+Authorization: Bearer {{token}}
+
+### 23. Movement history shows the restock, the order deduction ("Order ORD-1001") and the cancel return
+GET {{base}}/api/inventory/movements
+Authorization: Bearer {{token}}
+
+### 24. Dashboard summary -> counts match what you did
+GET {{base}}/api/dashboard/summary
+Authorization: Bearer {{token}}
+
+### 25. Create a STAFF user -> 201
+POST {{base}}/api/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"fullName": "Staff Tester", "email": "staff@example.com", "password": "StaffPass123", "role": "STAFF"}
+
+### 26. Login as staff (token saved as {{staffToken}})
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email": "staff@example.com", "password": "StaffPass123"}
+
+> {% client.global.set("staffToken", response.body.token); %}
+
+### 27. Staff can read -> 200
+GET {{base}}/api/products
+Authorization: Bearer {{staffToken}}
+
+### 28. Staff cannot delete -> 403 "You don't have permission to do that."
+DELETE {{base}}/api/products/2
+Authorization: Bearer {{staffToken}}
+
+### 29. Staff cannot manage users -> 403
+GET {{base}}/api/users
+Authorization: Bearer {{staffToken}}
+
+### 30. Admin can delete a product with no orders -> 204 (use product 2; product 1 is on an order so it would give 409)
+DELETE {{base}}/api/products/2
+Authorization: Bearer {{token}}
